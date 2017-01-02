@@ -2,6 +2,7 @@ LOCAL_PATH := $(call my-dir)
 
 # add OpenCV
 include $(CLEAR_VARS)
+OPENCV_INSTALL_MODULES:=on
 include $(LOCAL_PATH)/OpenCV.mk
 
 LOCAL_MODULE    := JNIpart
