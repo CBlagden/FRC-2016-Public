@@ -64,7 +64,30 @@ std::vector<TargetInfo> processImpl(int w, int h, int texOut, DisplayMode mode,
   std::vector<TargetInfo> rejected_targets;
   cv::findContours(contour_input, contours, cv::RETR_EXTERNAL,
                    cv::CHAIN_APPROX_TC89_KCOS);
+
+  LOGD("Number of contours: %d", contours.size());
+  for (int i = 0; i < contours.size(); i++) {
+    if (cv::arcLength(contours.at(i), true) < 30) {
+      contours.erase(contours.begin() + i);
+    }
+  }
+  double ratio = 0;
+  if (contours.size() ==2){
+    double arc1 = cv::arcLength(contours.at(0), true);
+    double arc2 = cv::arcLength(contours.at(1), true);
+    if (arc1 > arc2) {
+      ratio = arc2/arc1;
+    }
+    else {
+      ratio = arc1/arc2;
+    }
+  }
+  LOGD("Number of GOOD contours: %d, RATIO: %f", contours.size(), ratio);
+  if (ratio > 0.65) {
+    LOGD("Found Goal!");
+  }
   for (auto &contour : contours) {
+    LOGD("Contour size: %f", cv::arcLength(contour, true));
     convex_contour.clear();
     cv::convexHull(contour, convex_contour, false);
     poly.clear();
