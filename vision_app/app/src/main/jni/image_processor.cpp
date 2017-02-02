@@ -59,13 +59,16 @@ std::vector<TargetInfo> processImpl(int w, int h, int texOut, DisplayMode mode,
   contour_input = thresh.clone();
   std::vector<std::vector<cv::Point>> contours;
   std::vector<cv::Point> convex_contour;
+  std::vector<cv::Point> second_convex_contour;
   std::vector<cv::Point> poly;
+  std::vector<cv::Point> second_poly;
   std::vector<TargetInfo> targets;
   std::vector<TargetInfo> rejected_targets;
   cv::findContours(contour_input, contours, cv::RETR_EXTERNAL,
                    cv::CHAIN_APPROX_TC89_KCOS);
 
   LOGD("Number of contours: %d", contours.size());
+  // Initial (pre-polygon) filter based on size
   for (int i = 0; i < contours.size(); i++) {
     if (cv::arcLength(contours.at(i), true) < 30) {
       contours.erase(contours.begin() + i);
@@ -83,8 +86,18 @@ std::vector<TargetInfo> processImpl(int w, int h, int texOut, DisplayMode mode,
     }
   }
   LOGD("Number of GOOD contours: %d, RATIO: %f", contours.size(), ratio);
-  if (ratio > 0.65) {
+  if (ratio > 0.65) { //TODO: Improve this with other heuristics
     LOGD("Found Goal!");
+    convex_contour.clear();
+    cv::convexHull(contours.at(0), convex_contour, false);
+    poly.clear();
+    cv::approxPolyDP(convex_contour, poly, 20, true);
+    second_convex_contour.clear();
+    cv::convexHull(contours.at(1), second_convex_contour, false);
+    second_poly.clear();
+    cv::approxPolyDP(second_convex_contour, second_poly, 3, true);
+    LOGD("First poly size: %d Second poly size: %d", poly.size(), second_poly.size());
+
   }
   for (auto &contour : contours) {
     LOGD("Contour size: %f", cv::arcLength(contour, true));
