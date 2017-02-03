@@ -23,6 +23,7 @@ struct TargetInfo {
   double centroid_y;
   double width;
   double height;
+
   std::vector<cv::Point> points;
 };
 
@@ -62,8 +63,7 @@ std::vector<TargetInfo> processImpl(int w, int h, int texOut, DisplayMode mode,
   std::vector<cv::Point> poly;
   std::vector<TargetInfo> targets;
   std::vector<TargetInfo> rejected_targets;
-  cv::findContours(contour_input, contours, cv::RETR_EXTERNAL,
-                   cv::CHAIN_APPROX_TC89_KCOS);
+  cv::findContours(contour_input, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_TC89_KCOS);
 
   LOGD("Number of contours: %d", contours.size());
   // Initial (pre-polygon) filter based on size
@@ -83,14 +83,12 @@ std::vector<TargetInfo> processImpl(int w, int h, int texOut, DisplayMode mode,
                   ratio = arc1/arc2;
                 }
                 if (ratio > 0.65) {
-                for (int i_1 = 0; i_1 <= 0; i_1++) {
                     for (auto &contour : contours) {
                 LOGD("Contour size: %f", cv::arcLength(contour, true));
-                convex_contour.clear();
-                cv::convexHull(contour, convex_contour, true);
-                poly.clear();
-                cv::approxPolyDP(convex_contour, poly, 20, true);
-                if (poly.size() == 4 && cv::isContourConvex(poly)) {
+                LOGD("Ratio: %d", ratio);
+                LOGD("Number of contours after filtering %d", contours.size());
+                //cv::approxPolyDP(convex_contour, poly, 20, true);
+            /*    if (poly.size() == 4 && cv::isContourConvex(poly)) {
                   TargetInfo target;
                   int min_x = std::numeric_limits<int>::max();
                   int max_x = std::numeric_limits<int>::min();
@@ -175,11 +173,10 @@ std::vector<TargetInfo> processImpl(int w, int h, int texOut, DisplayMode mode,
                   LOGD("Found target at %.2lf, %.2lf...size %.2lf, %.2lf",
                        target.centroid_x, target.centroid_y, target.width, target.height);
                   targets.push_back(std::move(target));
-                }
+                } */
               }
             }
           }
-        }
   LOGD("Contour analysis costs %d ms", getTimeInterval(t));
 
   // write back
