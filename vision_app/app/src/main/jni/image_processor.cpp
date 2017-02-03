@@ -65,18 +65,23 @@ std::vector<TargetInfo> processImpl(int w, int h, int texOut, DisplayMode mode,
   std::vector<cv::Point> second_poly;
   std::vector<TargetInfo> targets;
   std::vector<TargetInfo> rejected_targets;
+  contours.clear();
   cv::findContours(contour_input, contours, cv::RETR_EXTERNAL,
                    cv::CHAIN_APPROX_TC89_KCOS);
 
-  LOGD("Number of contours: %d", contours.size());
+  LOGD("Number of contours before reduction: %d", contours.size());
   // Initial (pre-polygon) filter based on size
-  for (int i = 0; i < contours.size(); i++) {
-    if (cv::arcLength(contours.at(i), true) < 30) {
-      contours.erase(contours.begin() + i);
-    }
+  for (std::vector<std::vector<cv::Point> >::iterator it = contours.begin(); it!=contours.end(); ) {
+    double length = cv::arcLength(*it, true);
+    LOGD("contour length %f", length);
+    if (length < 30)
+        it=contours.erase(it);
+    else
+        ++it;
   }
+  LOGD("Number of contours after reduction: %d", contours.size());
   double ratio = 0;
-  if (contours.size() ==2){
+  if (contours.size() == 2){
     double arc1 = cv::arcLength(contours.at(0), true);
     double arc2 = cv::arcLength(contours.at(1), true);
     if (arc1 > arc2) {
@@ -91,13 +96,15 @@ std::vector<TargetInfo> processImpl(int w, int h, int texOut, DisplayMode mode,
     LOGD("Found Goal!");
 
   }
+  /*
   for (auto &contour : contours) {
     for (auto &contour2 : contours) {
         double majorPerim = cv::arcLength(contour, true);
         double minorPerim = cv::arcLength(contour2, true);
+        LOGD("Comparing contours %f %f", majorPerim, minorPerim);
         if (majorPerim == minorPerim) {
             continue; //same contour, no comparison needed
-        } else if (minorPerim > minorPerim) {
+        } else if (minorPerim > majorPerim) {
             double temp = minorPerim;
             minorPerim = majorPerim;
             majorPerim = temp;
@@ -107,6 +114,11 @@ std::vector<TargetInfo> processImpl(int w, int h, int texOut, DisplayMode mode,
         }
         TargetInfo target;
         target.majorPerim = majorPerim;
+        for (auto &seen_target : targets) {
+            if (target.majorPerim == seen_target.majorPerim) {
+                continue; // Already processed this target.
+            }
+        }
         LOGD("Contour sizes: %f, %f", majorPerim, minorPerim);
         convex_contour.clear();
         cv::convexHull(contour, convex_contour, false);
@@ -194,7 +206,7 @@ std::vector<TargetInfo> processImpl(int w, int h, int texOut, DisplayMode mode,
             rejected_targets.push_back(std::move(target));
             continue;
           }
-          /*// Filter based on fullness
+          // Filter based on fullness
           const double kMinFullness = .2;
           const double kMaxFullness = .5;
           double original_contour_area = cv::contourArea(contour);
@@ -204,7 +216,7 @@ std::vector<TargetInfo> processImpl(int w, int h, int texOut, DisplayMode mode,
             LOGD("Rejected target due to fullness");
             rejected_targets.push_back(std::move(target));
             continue;
-          }*/
+          }
 
           // We found a target
           LOGD("Found target at %.2lf, %.2lf...size %.2lf, %.2lf",
@@ -212,7 +224,7 @@ std::vector<TargetInfo> processImpl(int w, int h, int texOut, DisplayMode mode,
           targets.push_back(std::move(target));
         }
      }
-  }
+  }*/
   LOGD("Contour analysis costs %d ms", getTimeInterval(t));
 
   // write back
