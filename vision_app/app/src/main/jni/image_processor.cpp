@@ -66,7 +66,7 @@ std::vector<TargetInfo> processImpl(int w, int h, int texOut, DisplayMode mode,
   cv::findContours(contour_input, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_TC89_KCOS);
 
   LOGD("Number of contours: %d", contours.size());
-  // Initial (pre-polygon) filter based on size
+  // Initial (pre-polygon) filt er based on size
         for (int i= 0; i < contours.size(); i++) {
              if (cv::arcLength(contours.at(i), true) < 30) {
                   contours.erase(contours.begin() + i);
