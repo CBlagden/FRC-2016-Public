@@ -61,9 +61,8 @@ std::vector<TargetInfo> processImpl(int w, int h, int texOut, DisplayMode mode,
   contour_input = thresh.clone();
   std::vector<std::vector<cv::Point>> contours;
   std::vector<cv::Point> convex_contour;
+  std::vector<cv::Point> combo_contour;
   std::vector<cv::Point> poly;
-  std::vector<cv::Point> second_poly;
-  //std::vector<cv::Point> big_poly;
   std::vector<TargetInfo> targets;
   std::vector<TargetInfo> rejected_targets;
   contours.clear();
@@ -133,7 +132,20 @@ std::vector<TargetInfo> processImpl(int w, int h, int texOut, DisplayMode mode,
         }
         if (skip) continue;
         LOGD("Contour sizes: %f, %f", majorPerim, minorPerim);
-        cv::RotatedRect majorPoly = cv::minAreaRect(cv::Mat(contour));
+        combo_contour.clear();
+        for (auto p : contour) {
+            combo_contour.push_back(std::move(p));
+        }
+        for (auto p2 : contour2) {
+            combo_contour.push_back(std::move(p2));
+        }
+
+        /*convex_contour.clear();
+        cv::convexHull(combo_contour, convex_contour, false);
+        poly.clear();
+        cv::approxPolyDP(convex_contour, poly, 20, true);*/
+
+        cv::RotatedRect majorPoly = cv::minAreaRect(cv::Mat(combo_contour));
         poly.clear();
         cv::Point2f polypoints[4];
         majorPoly.points(polypoints);
@@ -145,57 +157,16 @@ std::vector<TargetInfo> processImpl(int w, int h, int texOut, DisplayMode mode,
             poly.insert(poly.begin(), std::move(p));
         }
 
-        cv::RotatedRect minorPoly = cv::minAreaRect(cv::Mat(contour2));
-        second_poly.clear();
-        cv::Point2f minorPolyPoints[4];
-        minorPoly.points(minorPolyPoints);
-        for (int i = 0; i < 4; i++) {
-            LOGD("Adding point %f %f", minorPolyPoints[i].x, minorPolyPoints[i].y);
-            cv::Point p;
-            p.x = (int32_t) minorPolyPoints[i].x;
-            p.y = (int32_t) minorPolyPoints[i].y;
-            second_poly.insert(second_poly.begin(), std::move(p));
-        }
-
-        LOGD("First poly size: %d Second poly size: %d", poly.size(), second_poly.size());
-        //if (poly.size() == 4 && cv::isContourConvex(poly)) {
-        if (poly.size() == 4 && second_poly.size() == 4) {
-          //Find bounding polygon of the two polygons
+        LOGD("Found Poly Size: %d", poly.size());
+        if (poly.size() == 4 && cv::isContourConvex(poly)) {
+          //Find Centroid
           int min_x = std::numeric_limits<int>::max();
           int max_x = std::numeric_limits<int>::min();
           int min_y = std::numeric_limits<int>::max();
           int max_y = std::numeric_limits<int>::min();
-          for (auto point : poly) {
-            if (point.x < min_x)
-              min_x = point.x;
-            if (point.x > max_x)
-              max_x = point.x;
-            if (point.y < min_y)
-              min_y = point.y;
-            if (point.y > max_y)
-              max_y = point.y;
-          }
-          for (auto point : second_poly) {
-            if (point.x < min_x)
-              min_x = point.x;
-            if (point.x > max_x)
-              max_x = point.x;
-            if (point.y < min_y)
-              min_y = point.y;
-            if (point.y > max_y)
-              max_y = point.y;
-          }
-
-          std::vector<cv::Point> big_poly{{min_x, max_y},{max_x, max_y},{max_x, min_y},{min_x, min_y}};
-
-          //Find Centroid
-          min_x = std::numeric_limits<int>::max();
-          max_x = std::numeric_limits<int>::min();
-          min_y = std::numeric_limits<int>::max();
-          max_y = std::numeric_limits<int>::min();
           target.centroid_x = 0;
           target.centroid_y = 0;
-          for (auto point : big_poly) {
+          for (auto point : poly) {
             if (point.x < min_x)
               min_x = point.x;
             if (point.x > max_x)
@@ -211,11 +182,11 @@ std::vector<TargetInfo> processImpl(int w, int h, int texOut, DisplayMode mode,
           target.centroid_y /= 4;
           target.width = max_x - min_x;
           target.height = max_y - min_y;
-          target.majorPoints = big_poly;
-          target.minorPoints = second_poly;
+          target.majorPoints = poly;
+          target.minorPoints = poly;
 
           // Filter based on relative size
-          const double kMaxMajorMinorRatio = .85;
+          const double kMaxMajorMinorRatio = .65;
           if (((float)minorPerim)/((float)majorPerim) < kMaxMajorMinorRatio) {
             LOGD("Rejecting target due to relative size");
             rejected_targets.push_back(std::move(target));
@@ -268,12 +239,13 @@ std::vector<TargetInfo> processImpl(int w, int h, int texOut, DisplayMode mode,
 
           // Filter based on fullness
           const double kMinFullness = .2;
-          const double kMaxFullness = .5;
-          double original_contour_area = cv::contourArea(contour) + cv::contourArea(contour2);
-          double poly_area = cv::contourArea(big_poly);
+          const double kMaxFullness = .6;
+          double original_contour_area = cv::contourArea(combo_contour);
+          double poly_area = cv::contourArea(poly);
           double fullness = original_contour_area / poly_area;
+          LOGD("fullness %f", fullness);
           if (fullness < kMinFullness || fullness > kMaxFullness) {
-            LOGD("Rejected target due to fullness");
+            LOGD("Rejected target due to fullness %f", fullness);
             rejected_targets.push_back(std::move(target));
             continue;
           }
