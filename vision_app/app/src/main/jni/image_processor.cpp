@@ -144,10 +144,10 @@ std::vector<TargetInfo> processImpl(int w, int h, int texOut, DisplayMode mode,
                 }
 
         LOGD("Contour sizes: %f, %f", majorPerim, minorPerim);
-        convex_contour.clear();
+        /*convex_contour.clear();
         cv::convexHull(contourTotal, convex_contour, 20, true);
         poly.clear();
-        cv::approxPolyDP(convex_contour, poly, 20, true);
+        cv::approxPolyDP(convex_contour, poly, 20, true); */
         LOGD("poly after filtering size: %d", poly.size());
         if (poly.size() == 4 && cv::isContourConvex(poly)) {
           TargetInfo target;
