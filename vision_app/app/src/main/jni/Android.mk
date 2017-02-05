@@ -3,7 +3,7 @@ LOCAL_PATH := $(call my-dir)
 # add OpenCV
 include $(CLEAR_VARS)
 OPENCV_INSTALL_MODULES:=on
-include $(LOCAL_PATH)/OpenCV.mk
+include  C:\Users\Admin\Downloads\OpenCV-3.1.0-android-sdk\OpenCV-android-sdk\sdk\native\jni\OpenCV.mk
 
 LOCAL_MODULE    := JNIpart
 LOCAL_SRC_FILES := jni.c image_processor.cpp
