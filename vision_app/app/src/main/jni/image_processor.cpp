@@ -74,7 +74,7 @@ std::vector<TargetInfo> processImpl(int w, int h, int texOut, DisplayMode mode,
   for (std::vector<std::vector<cv::Point> >::iterator it = contours.begin(); it!=contours.end(); ) {
     double length = cv::arcLength(*it, true);
     LOGD("contour length %f", length);
-    if (length < 30)
+    if (length < 60)
         it=contours.erase(it);
     else
         ++it;
@@ -92,7 +92,7 @@ std::vector<TargetInfo> processImpl(int w, int h, int texOut, DisplayMode mode,
     }
   }
   LOGD("Number of GOOD contours: %d, RATIO: %f", contours.size(), ratio);
-  if (ratio > 0.65) { //TODO: Improve this with other heuristics
+  if (ratio > 0.8) { //TODO: Improve this with other heuristics
     LOGD("Found Goal!");
 
   }
@@ -186,9 +186,12 @@ std::vector<TargetInfo> processImpl(int w, int h, int texOut, DisplayMode mode,
           target.minorPoints = poly;
 
           // Filter based on relative size
-          const double kMaxMajorMinorRatio = .65;
-          if (((float)minorPerim)/((float)majorPerim) < kMaxMajorMinorRatio) {
-            LOGD("Rejecting target due to relative size");
+          const double kMaxMajorMinorRatio = 1;
+          const double kMinMajorMinorRatio = .5;
+          float targetRatio = ((float)minorPerim)/((float)majorPerim);
+          LOGD("relative size %f", targetRatio);
+          if (targetRatio < kMinMajorMinorRatio || targetRatio > kMaxMajorMinorRatio) {
+            LOGD("Rejecting target due to relative size %f", targetRatio);
             rejected_targets.push_back(std::move(target));
             continue;
           }
@@ -196,19 +199,20 @@ std::vector<TargetInfo> processImpl(int w, int h, int texOut, DisplayMode mode,
           // Filter based on size
           // Keep in mind width/height are in imager terms...
           const double kMinTargetWidth = 20;
-          const double kMaxTargetWidth = 300;
-          const double kMinTargetHeight = 10;
-          const double kMaxTargetHeight = 100;
+          const double kMaxTargetWidth = 130;
+          const double kMinTargetHeight = 20;
+          const double kMaxTargetHeight = 130;
+          LOGD("Dimensions height %f width %f", target.height, target.width);
           if (target.width < kMinTargetWidth || target.width > kMaxTargetWidth ||
               target.height < kMinTargetHeight ||
               target.height > kMaxTargetHeight) {
-            LOGD("Rejecting target due to size");
+            LOGD("Rejecting target due to size, height %f width %f", target.height, target.width);
             rejected_targets.push_back(std::move(target));
             continue;
           }
           // Filter based on shape
-          const double kNearlyHorizontalSlope = 1 / 1.25;
-          const double kNearlyVerticalSlope = 1.25;
+          const double kNearlyHorizontalSlope = 1.25;
+          const double kNearlyVerticalSlope = 1 / 1.25;
           int num_nearly_horizontal_slope = 0;
           int num_nearly_vertical_slope = 0;
           bool last_edge_vertical = false;
@@ -238,7 +242,7 @@ std::vector<TargetInfo> processImpl(int w, int h, int texOut, DisplayMode mode,
           }
 
           // Filter based on fullness
-          const double kMinFullness = .2;
+          const double kMinFullness = .1;
           const double kMaxFullness = .6;
           double original_contour_area = cv::contourArea(combo_contour);
           double poly_area = cv::contourArea(poly);
@@ -332,6 +336,9 @@ extern "C" void processFrame(JNIEnv *env, int tex1, int tex2, int w, int h,
   auto targets = processImpl(w, h, tex2, static_cast<DisplayMode>(mode), h_min,
                              h_max, s_min, s_max, v_min, v_max);
   int numTargets = targets.size();
+  if (numTargets > 3) {
+    numTargets = 3;
+  }
   ensureJniRegistered(env);
   env->SetIntField(destTargetInfo, sNumTargetsField, numTargets);
   if (numTargets == 0) {
