@@ -1,24 +1,25 @@
 package org.opencv.android;
 
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.nio.FloatBuffer;
-import java.util.concurrent.ConcurrentLinkedQueue;
-
-import javax.microedition.khronos.egl.EGLConfig;
-import javax.microedition.khronos.opengles.GL10;
-
-import org.opencv.android.CameraGLSurfaceView.CameraTextureListener;
-
 import android.annotation.TargetApi;
 import android.graphics.SurfaceTexture;
 import android.hardware.camera2.CameraCaptureSession;
 import android.hardware.camera2.CaptureRequest;
+import android.hardware.camera2.CaptureResult;
+import android.hardware.camera2.TotalCaptureResult;
 import android.opengl.GLES11Ext;
 import android.opengl.GLES20;
 import android.opengl.GLSurfaceView;
 import android.util.Log;
 import android.view.View;
+
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.FloatBuffer;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.TimeUnit;
+
+import javax.microedition.khronos.egl.EGLConfig;
+import javax.microedition.khronos.opengles.GL10;
 
 @TargetApi(15)
 public abstract class BetterCameraGLRendererBase implements GLSurfaceView.Renderer, SurfaceTexture.OnFrameAvailableListener {
@@ -91,6 +92,8 @@ public abstract class BetterCameraGLRendererBase implements GLSurfaceView.Render
     protected boolean mEnabled = true;
     protected boolean mIsStarted = false;
 
+    private long mLastRestartTimestamp;
+
     protected BetterCameraGLSurfaceView mView;
 
     protected abstract void openCamera(int id);
@@ -116,6 +119,23 @@ public abstract class BetterCameraGLRendererBase implements GLSurfaceView.Render
             super.onCaptureStarted(session, request, timestamp, frameNumber);
             Log.d(LOGTAG, "onCaptureStarted - Timestamp " + timestamp + ", current time " + System.nanoTime() / 1E9);
             mCaptureTimes.add(new FrameTimestampToCaptureStartTime(timestamp, System.nanoTime()));
+        }
+
+        @Override
+        public void onCaptureCompleted(CameraCaptureSession session, CaptureRequest request, TotalCaptureResult result) {
+            super.onCaptureCompleted(session, request, result);
+            final Long actualExposure = result.get(CaptureResult.SENSOR_EXPOSURE_TIME);
+            if (actualExposure == null) {
+                return;
+            }
+            if (actualExposure > 1000000L) {
+                Log.d("BRIGHT", "exposure was out of range " + result.get(CaptureResult.SENSOR_EXPOSURE_TIME));
+                if (System.currentTimeMillis() - mLastRestartTimestamp > TimeUnit.SECONDS.toMillis(4)) {
+                    Log.d("BRIGHT", "restarting");
+                    mLastRestartTimestamp = System.currentTimeMillis();
+                    setCameraIndex(-1);
+                }
+            }
         }
     };
 
