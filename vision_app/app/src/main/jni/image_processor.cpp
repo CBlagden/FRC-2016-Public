@@ -1,6 +1,7 @@
 #include "image_processor.h"
 
 #include <algorithm>
+#include <stdlib.h>
 
 #include <GLES2/gl2.h>
 #include <EGL/egl.h>
@@ -19,13 +20,11 @@ enum DisplayMode {
 };
 
 struct TargetInfo {
-  double majorPerim;
   double centroid_x;
   double centroid_y;
   double width;
   double height;
-  std::vector<cv::Point> majorPoints;
-  std::vector<cv::Point> minorPoints;
+  std::vector<cv::Point> points;
 };
 
 std::vector<TargetInfo> processImpl(int w, int h, int texOut, DisplayMode mode,
@@ -61,210 +60,95 @@ std::vector<TargetInfo> processImpl(int w, int h, int texOut, DisplayMode mode,
   contour_input = thresh.clone();
   std::vector<std::vector<cv::Point>> contours;
   std::vector<cv::Point> convex_contour;
-  std::vector<cv::Point> combo_contour;
   std::vector<cv::Point> poly;
+  std::vector<TargetInfo> accepted_targets;
   std::vector<TargetInfo> targets;
   std::vector<TargetInfo> rejected_targets;
-  contours.clear();
   cv::findContours(contour_input, contours, cv::RETR_EXTERNAL,
                    cv::CHAIN_APPROX_TC89_KCOS);
-
-  LOGD("Number of contours before reduction: %d", contours.size());
-  // Initial (pre-polygon) filter based on size
-  for (std::vector<std::vector<cv::Point> >::iterator it = contours.begin(); it!=contours.end(); ) {
-    double length = cv::arcLength(*it, true);
-    LOGD("contour length %f", length);
-    if (length < 60)
-        it=contours.erase(it);
-    else
-        ++it;
-  }
-  LOGD("Number of contours after reduction: %d", contours.size());
-  double ratio = 0;
-  if (contours.size() == 2){
-    double arc1 = cv::arcLength(contours.at(0), true);
-    double arc2 = cv::arcLength(contours.at(1), true);
-    if (arc1 > arc2) {
-      ratio = arc2/arc1;
-    }
-    else {
-      ratio = arc1/arc2;
-    }
-  }
-  LOGD("Number of GOOD contours: %d, RATIO: %f", contours.size(), ratio);
-  if (ratio > 0.8) { //TODO: Improve this with other heuristics
-    LOGD("Found Goal!");
-
-  }
   for (auto &contour : contours) {
-    for (auto &contour2 : contours) {
-        double majorPerim = cv::arcLength(contour, true);
-        double minorPerim = cv::arcLength(contour2, true);
-        LOGD("Comparing contours %f %f", majorPerim, minorPerim);
-        if (majorPerim == minorPerim) {
-            continue; //same contour, no comparison needed
-        } else if (minorPerim > majorPerim) {
-            double temp = minorPerim;
-            minorPerim = majorPerim;
-            majorPerim = temp;
-            auto tempContour = contour2;
-            contour2 = contour;
-            contour = tempContour;
-        }
-        TargetInfo target;
-        target.majorPerim = majorPerim;
-        bool skip = false;
-        for (auto &seen_target : targets) {
-            LOGD("Checking if we have seen a target with perim %f", seen_target.majorPerim);
-            if (target.majorPerim == seen_target.majorPerim) {
-                LOGD("Skipping.");
-                skip = true;
-                continue; // Already processed this target.
-            }
-        }
-        for (auto &seen_target : rejected_targets) {
-            LOGD("Checking if we have seen a target with perim %f", seen_target.majorPerim);
-            if (target.majorPerim == seen_target.majorPerim) {
-                LOGD("Skipping.");
-                skip = true;
-                continue; // Already processed this target.
-            }
-        }
-        if (skip) continue;
-        LOGD("Contour sizes: %f, %f", majorPerim, minorPerim);
-        combo_contour.clear();
-        for (auto p : contour) {
-            combo_contour.push_back(std::move(p));
-        }
-        for (auto p2 : contour2) {
-            combo_contour.push_back(std::move(p2));
-        }
+    convex_contour.clear();
+    cv::convexHull(contour, convex_contour, false);
+    poly.clear();
 
-        /*convex_contour.clear();
-        cv::convexHull(combo_contour, convex_contour, false);
-        poly.clear();
-        cv::approxPolyDP(convex_contour, poly, 20, true);*/
+    if (cv::isContourConvex(convex_contour)) {
+      TargetInfo target;
+      cv::Rect bounding_rect = cv::boundingRect(convex_contour);
+      target.centroid_x = bounding_rect.x + (bounding_rect.width / 2);
+      // centroid Y is top of target because it changes shape as you move
+      target.centroid_y = bounding_rect.y + bounding_rect.height;
+      target.width = bounding_rect.width;
+      target.height = bounding_rect.height;
+      target.points = convex_contour;
 
-        cv::RotatedRect majorPoly = cv::minAreaRect(cv::Mat(combo_contour));
-        poly.clear();
-        cv::Point2f polypoints[4];
-        majorPoly.points(polypoints);
-        for (int i = 0; i < 4; i++) {
-            LOGD("Adding point %f %f", polypoints[i].x, polypoints[i].y);
-            cv::Point p;
-            p.x = (int32_t) polypoints[i].x;
-            p.y = (int32_t) polypoints[i].y;
-            poly.insert(poly.begin(), std::move(p));
-        }
+      // Filter based on size
+      // Keep in mind width/height are in imager terms...
+      const double kMinTargetWidth = 20;
+      const double kMaxTargetWidth = 300;
+      const double kMinTargetHeight = 6;
+      const double kMaxTargetHeight = 60;
+      if (target.width < kMinTargetWidth || target.width > kMaxTargetWidth ||
+          target.height < kMinTargetHeight ||
+          target.height > kMaxTargetHeight) {
+        LOGD("Rejecting target due to size. H: %.2lf | W: %.2lf",
+          target.height, target.width);
+        rejected_targets.push_back(std::move(target));
+        continue;
+      }
 
-        LOGD("Found Poly Size: %d", poly.size());
-        if (poly.size() == 4 && cv::isContourConvex(poly)) {
-          //Find Centroid
-          int min_x = std::numeric_limits<int>::max();
-          int max_x = std::numeric_limits<int>::min();
-          int min_y = std::numeric_limits<int>::max();
-          int max_y = std::numeric_limits<int>::min();
-          target.centroid_x = 0;
-          target.centroid_y = 0;
-          for (auto point : poly) {
-            if (point.x < min_x)
-              min_x = point.x;
-            if (point.x > max_x)
-              max_x = point.x;
-            if (point.y < min_y)
-              min_y = point.y;
-            if (point.y > max_y)
-              max_y = point.y;
-            target.centroid_x += point.x;
-            target.centroid_y += point.y;
-          }
-          target.centroid_x /= 4;
-          target.centroid_y /= 4;
-          target.width = max_x - min_x;
-          target.height = max_y - min_y;
-          target.majorPoints = poly;
-          target.minorPoints = poly;
+      // Filter based on shape
+      const double kMaxWideness = 7.0;
+      const double kMinWideness = 1.5;
+      double wideness = target.width / target.height;
+      if (wideness < kMinWideness || wideness > kMaxWideness) {
+        LOGD("Rejecting target due to shape : %.2lf", wideness);
+        rejected_targets.push_back(std::move(target));
+        continue;
+      }
 
-          // Filter based on relative size
-          const double kMaxMajorMinorRatio = 1;
-          const double kMinMajorMinorRatio = .5;
-          float targetRatio = ((float)minorPerim)/((float)majorPerim);
-          LOGD("relative size %f", targetRatio);
-          if (targetRatio < kMinMajorMinorRatio || targetRatio > kMaxMajorMinorRatio) {
-            LOGD("Rejecting target due to relative size %f", targetRatio);
-            rejected_targets.push_back(std::move(target));
-            continue;
-          }
+      //Filter based on fullness
+      const double kMinFullness = .45;
+      const double kMaxFullness = .95;
+      double original_contour_area = cv::contourArea(convex_contour);
+      double area = target.width * target.height * 1.0;
+      double fullness = original_contour_area / area;
+      if (fullness < kMinFullness || fullness > kMaxFullness) {
+        LOGD("Rejecting target due to fullness : %.2lf", fullness);
+        rejected_targets.push_back(std::move(target));
+        continue;
+      }
 
-          // Filter based on size
-          // Keep in mind width/height are in imager terms...
-          const double kMinTargetWidth = 20;
-          const double kMaxTargetWidth = 130;
-          const double kMinTargetHeight = 20;
-          const double kMaxTargetHeight = 130;
-          LOGD("Dimensions height %f width %f", target.height, target.width);
-          if (target.width < kMinTargetWidth || target.width > kMaxTargetWidth ||
-              target.height < kMinTargetHeight ||
-              target.height > kMaxTargetHeight) {
-            LOGD("Rejecting target due to size, height %f width %f", target.height, target.width);
-            rejected_targets.push_back(std::move(target));
-            continue;
-          }
-          // Filter based on shape
-          const double kNearlyHorizontalSlope = 1.25;
-          const double kNearlyVerticalSlope = 1 / 1.25;
-          int num_nearly_horizontal_slope = 0;
-          int num_nearly_vertical_slope = 0;
-          bool last_edge_vertical = false;
-          for (size_t i = 0; i < 4; ++i) {
-            double dy = target.majorPoints[i].y - target.majorPoints[(i + 1) % 4].y;
-            double dx = target.majorPoints[i].x - target.majorPoints[(i + 1) % 4].x;
-            double slope = std::numeric_limits<double>::max();
-            if (dx != 0) {
-              slope = dy / dx;
-            }
-            if (std::abs(slope) <= kNearlyHorizontalSlope &&
-                (i == 0 || last_edge_vertical)) {
-              last_edge_vertical = false;
-              num_nearly_horizontal_slope++;
-            } else if (std::abs(slope) >= kNearlyVerticalSlope &&
-                       (i == 0 || !last_edge_vertical)) {
-              last_edge_vertical = true;
-              num_nearly_vertical_slope++;
-            } else {
-              break;
-            }
-          }
-          if (num_nearly_horizontal_slope != 2 && num_nearly_vertical_slope != 2) {
-            LOGD("Rejecting target due to shape");
-            rejected_targets.push_back(std::move(target));
-            continue;
-          }
-
-          // Filter based on fullness
-          const double kMinFullness = .1;
-          const double kMaxFullness = .6;
-          double original_contour_area = cv::contourArea(combo_contour);
-          double poly_area = cv::contourArea(poly);
-          double fullness = original_contour_area / poly_area;
-          LOGD("fullness %f", fullness);
-          if (fullness < kMinFullness || fullness > kMaxFullness) {
-            LOGD("Rejected target due to fullness %f", fullness);
-            rejected_targets.push_back(std::move(target));
-            continue;
-          }
-
-          // We found a target
-          LOGD("Found target at %.2lf, %.2lf...size %.2lf, %.2lf",
-               target.centroid_x, target.centroid_y, target.width, target.height);
-          targets.push_back(std::move(target));
-        }
-        else {
-            rejected_targets.push_back(std::move(target));
-        }
-     }
+      // We found a target
+      LOGD("Found target at %.2lf, %.2lf %.2lf, %.2lf",
+           target.centroid_x, target.centroid_y, target.width, target.height);
+      accepted_targets.push_back(std::move(target));
+    }
   }
   LOGD("Contour analysis costs %d ms", getTimeInterval(t));
+
+
+  const double kMaxOffset = 10;
+  bool found = false;
+  for (int i = 0; !found && i < accepted_targets.size(); i++) {
+    for (int j = 0; !found && j < accepted_targets.size(); j++) {
+      if (i == j) {
+        continue;
+      }
+      TargetInfo targetI = accepted_targets[i];
+      TargetInfo targetJ = accepted_targets[j];
+      double offset = abs(targetI.centroid_x - targetJ.centroid_x);
+      if (offset < kMaxOffset) {
+        TargetInfo topTarget = targetI.centroid_y > targetJ.centroid_y ? targetI : targetJ;
+        TargetInfo bottomTarget = targetI.centroid_y < targetJ.centroid_y ? targetI : targetJ;
+        if (topTarget.height > bottomTarget.height) {
+          targets.push_back(std::move(topTarget));
+          found = true;
+          break;
+        }
+      }
+    }
+  }
+
 
   // write back
   t = getTimeMs();
@@ -277,14 +161,14 @@ std::vector<TargetInfo> processImpl(int w, int h, int texOut, DisplayMode mode,
     vis = input;
     // Render the targets
     for (auto &target : targets) {
-      cv::polylines(vis, target.majorPoints, true, cv::Scalar(0, 112, 255), 3);
-      cv::circle(vis, cv::Point(target.centroid_x, target.centroid_y), 5,
-                 cv::Scalar(0, 112, 255), 3);
+      cv::polylines(vis, target.points, true, cv::Scalar(0, 112, 255), 3);
+      cv::circle(vis, cv::Point(target.centroid_x, target.centroid_y), 4,
+                 cv::Scalar(255, 50, 255), 3);
     }
   }
   if (mode == DISP_MODE_TARGETS_PLUS) {
     for (auto &target : rejected_targets) {
-      cv::polylines(vis, target.majorPoints, true, cv::Scalar(255, 0, 0), 3);
+      cv::polylines(vis, target.points, true, cv::Scalar(255, 0, 0), 3);
     }
   }
   LOGD("Creating vis costs %d ms", getTimeInterval(t));
@@ -295,7 +179,6 @@ std::vector<TargetInfo> processImpl(int w, int h, int texOut, DisplayMode mode,
   glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE,
                   vis.data);
   LOGD("glTexSubImage2D() costs %d ms", getTimeInterval(t));
-
   return targets;
 }
 
@@ -336,9 +219,6 @@ extern "C" void processFrame(JNIEnv *env, int tex1, int tex2, int w, int h,
   auto targets = processImpl(w, h, tex2, static_cast<DisplayMode>(mode), h_min,
                              h_max, s_min, s_max, v_min, v_max);
   int numTargets = targets.size();
-  if (numTargets > 3) {
-    numTargets = 3;
-  }
   ensureJniRegistered(env);
   env->SetIntField(destTargetInfo, sNumTargetsField, numTargets);
   if (numTargets == 0) {
