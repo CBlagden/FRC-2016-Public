@@ -9,6 +9,8 @@ import android.hardware.camera2.TotalCaptureResult;
 import android.opengl.GLES11Ext;
 import android.opengl.GLES20;
 import android.opengl.GLSurfaceView;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 import android.view.View;
 
@@ -100,6 +102,7 @@ public abstract class BetterCameraGLRendererBase implements GLSurfaceView.Render
     protected BetterCameraGLSurfaceView mView;
 
     private final Logger mLogger;
+    private final Handler mRestartHandler;
 
     protected abstract void openCamera(int id);
 
@@ -133,12 +136,17 @@ public abstract class BetterCameraGLRendererBase implements GLSurfaceView.Render
             if (actualExposure == null) {
                 return;
             }
-            if (true || actualExposure > 1000000L) {
+            if (actualExposure > 1000000L) {
                 mLogger.debug("exposure was out of range " + result.get(CaptureResult.SENSOR_EXPOSURE_TIME));
                 if (System.currentTimeMillis() - mLastRestartTimestamp > TimeUnit.SECONDS.toMillis(4)) {
                     mLogger.debug("restarting camera");
                     mLastRestartTimestamp = System.currentTimeMillis();
-                    setCameraIndex(-1);
+                    mRestartHandler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            setCameraIndex(-1);
+                        }
+                    });
                 }
             }
         }
@@ -155,6 +163,7 @@ public abstract class BetterCameraGLRendererBase implements GLSurfaceView.Render
         texOES.put(texCoordOES).position(0);
         tex2D.put(texCoord2D).position(0);
         mLogger = LoggerFactory.getLogger(BetterCameraGLRendererBase.class);
+        mRestartHandler = new Handler(Looper.getMainLooper());
     }
 
     @Override
