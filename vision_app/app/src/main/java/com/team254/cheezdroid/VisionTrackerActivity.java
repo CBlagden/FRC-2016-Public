@@ -7,13 +7,19 @@ import android.app.Dialog;
 import android.app.DialogFragment;
 import android.app.Fragment;
 import android.app.admin.DevicePolicyManager;
-import android.content.*;
+import android.content.BroadcastReceiver;
+import android.content.ComponentName;
+import android.content.Context;
+import android.content.DialogInterface;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.media.MediaPlayer;
 import android.os.BatteryManager;
 import android.os.Bundle;
+import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
 import android.util.Log;
 import android.util.Pair;
@@ -33,9 +39,7 @@ import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-import android.support.v4.app.ActivityCompat;
 
-import com.team254.cheezdroid.comm.RobotConnection;
 import com.team254.cheezdroid.comm.RobotConnectionStateListener;
 import com.team254.cheezdroid.comm.RobotConnectionStatusBroadcastReceiver;
 
@@ -46,6 +50,8 @@ import java.util.TimerTask;
 
 public class VisionTrackerActivity extends Activity implements RobotConnectionStateListener, RobotEventListener {
     private static final int REQUEST_CAMERA_PERMISSION = 1;
+    private static final String[] PERMISSIONS =
+            new String[]{Manifest.permission.CAMERA, Manifest.permission.WRITE_EXTERNAL_STORAGE};
     private static final String FRAGMENT_DIALOG = "dialog";
 
     private static boolean sLocked = true;
@@ -125,8 +131,7 @@ public class VisionTrackerActivity extends Activity implements RobotConnectionSt
                         @Override
                         public void onClick(DialogInterface dialog, int which) {
                             ActivityCompat.requestPermissions(parent.getActivity(),
-                                    new String[]{Manifest.permission.CAMERA},
-                                    REQUEST_CAMERA_PERMISSION);
+                                    PERMISSIONS, REQUEST_CAMERA_PERMISSION);
                         }
                     })
                     .setNegativeButton(android.R.string.cancel,
@@ -171,12 +176,11 @@ public class VisionTrackerActivity extends Activity implements RobotConnectionSt
 
     }
 
-    private void requestCameraPermission() {
+    private void requestPermissions() {
         if (ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.CAMERA)) {
             new ConfirmationDialog().show(this.getFragmentManager(), FRAGMENT_DIALOG);
         } else {
-            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.CAMERA},
-                    REQUEST_CAMERA_PERMISSION);
+            ActivityCompat.requestPermissions(this, PERMISSIONS, REQUEST_CAMERA_PERMISSION);
         }
     }
 
@@ -274,10 +278,11 @@ public class VisionTrackerActivity extends Activity implements RobotConnectionSt
     }
 
     private void tryStartCamera() {
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
-                != PackageManager.PERMISSION_GRANTED) {
-            requestCameraPermission();
-            return;
+        for (String permission : PERMISSIONS) {
+            if (ActivityCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions();
+                return;
+            }
         }
         mView = (VisionTrackerGLSurfaceView) findViewById(R.id.my_gl_surface_view);
         mView.setCameraTextureListener(mView);

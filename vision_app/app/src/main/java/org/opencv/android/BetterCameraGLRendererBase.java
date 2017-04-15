@@ -9,8 +9,13 @@ import android.hardware.camera2.TotalCaptureResult;
 import android.opengl.GLES11Ext;
 import android.opengl.GLES20;
 import android.opengl.GLSurfaceView;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 import android.view.View;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -96,6 +101,9 @@ public abstract class BetterCameraGLRendererBase implements GLSurfaceView.Render
 
     protected BetterCameraGLSurfaceView mView;
 
+    private final Logger mLogger;
+    private final Handler mRestartHandler;
+
     protected abstract void openCamera(int id);
 
     protected abstract void closeCamera();
@@ -129,11 +137,16 @@ public abstract class BetterCameraGLRendererBase implements GLSurfaceView.Render
                 return;
             }
             if (actualExposure > 1000000L) {
-                Log.d("BRIGHT", "exposure was out of range " + result.get(CaptureResult.SENSOR_EXPOSURE_TIME));
+                mLogger.debug("exposure was out of range " + result.get(CaptureResult.SENSOR_EXPOSURE_TIME));
                 if (System.currentTimeMillis() - mLastRestartTimestamp > TimeUnit.SECONDS.toMillis(4)) {
-                    Log.d("BRIGHT", "restarting");
+                    mLogger.debug("restarting camera");
                     mLastRestartTimestamp = System.currentTimeMillis();
-                    setCameraIndex(-1);
+                    mRestartHandler.post(new Runnable() {
+                        @Override
+                        public void run() {
+                            setCameraIndex(-1);
+                        }
+                    });
                 }
             }
         }
@@ -149,6 +162,8 @@ public abstract class BetterCameraGLRendererBase implements GLSurfaceView.Render
         vert.put(vertices).position(0);
         texOES.put(texCoordOES).position(0);
         tex2D.put(texCoord2D).position(0);
+        mLogger = LoggerFactory.getLogger(BetterCameraGLRendererBase.class);
+        mRestartHandler = new Handler(Looper.getMainLooper());
     }
 
     @Override
