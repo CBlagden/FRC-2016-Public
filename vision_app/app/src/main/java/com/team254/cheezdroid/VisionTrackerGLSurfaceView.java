@@ -7,7 +7,10 @@ import com.team254.cheezdroid.comm.messages.TargetUpdateMessage;
 import com.team254.cheezdroid.comm.messages.VisionMessage;
 
 import org.opencv.android.BetterCamera2Renderer;
+import org.opencv.android.BetterCameraGLRendererBase;
 import org.opencv.android.BetterCameraGLSurfaceView;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import android.app.Activity;
 import android.content.Context;
@@ -39,6 +42,8 @@ public class VisionTrackerGLSurfaceView extends BetterCameraGLSurfaceView implem
     static final double kCenterCol = ((double) kWidth) / 2.0 - .5;
     static final double kCenterRow = ((double) kHeight) / 2.0 - .5;
 
+    private final Logger mLogger;
+
     static BetterCamera2Renderer.Settings getCameraSettings() {
         BetterCamera2Renderer.Settings settings = new BetterCamera2Renderer.Settings();
         settings.height = kHeight;
@@ -54,6 +59,7 @@ public class VisionTrackerGLSurfaceView extends BetterCameraGLSurfaceView implem
 
     public VisionTrackerGLSurfaceView(Context context, AttributeSet attrs) {
         super(context, attrs, getCameraSettings());
+        mLogger = LoggerFactory.getLogger(VisionTrackerGLSurfaceView.class);
     }
 
     public void openOptionsMenu() {
@@ -133,6 +139,9 @@ public class VisionTrackerGLSurfaceView extends BetterCameraGLSurfaceView implem
 
         VisionUpdate visionUpdate = new VisionUpdate(image_timestamp);
         Log.i(LOGTAG, "Num targets = " + targetsInfo.numTargets);
+        if (targetsInfo.numTargets > 0) {
+            mLogger.debug("Num targets = " + targetsInfo.numTargets);
+        }
         for (int i = 0; i < targetsInfo.numTargets; ++i) {
             NativePart.TargetsInfo.Target target = targetsInfo.targets[i];
 
@@ -140,6 +149,7 @@ public class VisionTrackerGLSurfaceView extends BetterCameraGLSurfaceView implem
             double y = -(target.centroidX - kCenterCol) / getFocalLengthPixels();
             double z = (target.centroidY - kCenterRow) / getFocalLengthPixels();
             Log.i(LOGTAG, "Target at: " + y + ", " + z);
+            mLogger.debug("Target at: " + y + ", " + z);
             visionUpdate.addCameraTargetInfo(
                     new CameraTargetInfo(y, z));
         }
